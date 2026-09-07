@@ -1,0 +1,95 @@
+{
+  "project": "MERMUD Mobile Engine",
+  "version": "1.0.0",
+  "description": "Spesifikasi REST & Realtime Socket API untuk Platform Reverse-Auction Social Companion MERMUD",
+  "baseCurrency": "IDR",
+  "endpoints": [
+    {
+      "group": "Auth & KYC",
+      "method": "POST",
+      "path": "/api/v1/auth/request-otp",
+      "description": "Kirim OTP SMS/WhatsApp ke nomor ponsel Indonesia (+62)"
+    },
+    {
+      "group": "Auth & KYC",
+      "method": "POST",
+      "path": "/api/v1/kyc/submit-biometrics",
+      "description": "Upload foto e-KTP & selfie liveness detection untuk verifikasi anti-anonim"
+    },
+    {
+      "group": "Whitelisted Venues",
+      "method": "GET",
+      "path": "/api/v1/venues/search?city=Manado",
+      "description": "Ambil daftar tempat publik resmi yang disetujui (Kawasan Megamas, Mantos, Linow Tomohon, dll.)"
+    },
+    {
+      "group": "Hangout Request & Escrow",
+      "method": "POST",
+      "path": "/api/v1/hangouts/create",
+      "description": "Host membuat permintaan hangout publik. Saldo Rupiah di dompet dikunci otomatis ke rekening Escrow",
+      "sampleBody": {
+        "venueId": "venue-megamas-01",
+        "category": "CAFE_FOOD_HUNTER",
+        "title": "Teman ngopi & diskusi startup",
+        "scheduledTime": "2026-09-07T19:30:00Z",
+        "durationMinutes": 120,
+        "initialBudgetRupiah": 150000
+      }
+    },
+    {
+      "group": "Bidding Engine (ala inDrive)",
+      "method": "POST",
+      "path": "/api/v1/hangouts/:requestId/submit-bid",
+      "description": "Companion terverifikasi mengajukan tawaran (menerima harga awal atau counter-offer lebih tinggi)",
+      "sampleBody": {
+        "bidPriceRupiah": 200000,
+        "coverNote": "Saya bawa kamera mirrorless untuk bantu foto konten IG",
+        "estimatedArrivalMinutes": 20
+      }
+    },
+    {
+      "group": "Hangout Selection",
+      "method": "POST",
+      "path": "/api/v1/hangouts/:requestId/select-bid",
+      "description": "Host memilih 1 tawaran dari daftar pelamar. Status order terkunci (LOCKED) dan QR code generate"
+    },
+    {
+      "group": "Presence Handshake",
+      "method": "POST",
+      "path": "/api/v1/hangouts/:requestId/scan-handshake-qr",
+      "description": "Kedua pihak saling scan QR di lokasi publik untuk memulai sesi resmi"
+    },
+    {
+      "group": "Completion & Payout",
+      "method": "POST",
+      "path": "/api/v1/hangouts/:requestId/complete-session",
+      "description": "Sesi selesai, review diberikan, dana Escrow ditransfer ke dompet Companion dipotong 15% platform fee"
+    },
+    {
+      "group": "Wallet & Rupiah Banking",
+      "method": "POST",
+      "path": "/api/v1/wallet/topup-qris",
+      "description": "Generate QRIS dinamis untuk top up saldo Rupiah instan"
+    },
+    {
+      "group": "Wallet & Rupiah Banking",
+      "method": "POST",
+      "path": "/api/v1/wallet/withdraw",
+      "description": "Penarikan saldo bersih ke rekening bank lokal (BCA, BRI, Mandiri, BNI, DANA, GoPay)"
+    }
+  ],
+  "websocketEvents": {
+    "emit_from_client": [
+      { "event": "subscribe_radar", "payload": "{ city: 'Manado', radiusKm: 10 }" },
+      { "event": "companion_live_location", "payload": "{ lat: 1.4821, lng: 124.8428 }" },
+      { "event": "send_chat_message", "payload": "{ requestId: '...', text: '...' }" }
+    ],
+    "listen_from_server": [
+      { "event": "new_hangout_broadcast", "description": "Notifikasi realtime ke mitra terdekat ada ajakan baru" },
+      { "event": "bid_received_by_host", "description": "Daftar pelamar baru yang masuk di layar Host" },
+      { "event": "bid_chosen_by_host", "description": "Pemberitahuan bahwa tawaran disetujui / ditolak" },
+      { "event": "handshake_verified", "description": "Sesi hangout resmi dimulai" },
+      { "event": "safevibe_warning", "description": "Peringatan AI jika pesan chat melanggar tata tertib" }
+    ]
+  }
+}

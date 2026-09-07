@@ -1,0 +1,223 @@
+// Skema Database Prisma untuk MERMUD (Platform Social Companion Model inDrive)
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  COMPANION
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum KYCStatus {
+  NOT_SUBMITTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum RequestStatus {
+  OPEN_FOR_BIDS      // Sedang broadcast tawar-menawar
+  BID_SELECTED       // Host sudah memilih mitra, dana escrow terkunci
+  SESSION_IN_PROGRESS// Scan QR Handshake sukses, sesi sedang jalan
+  COMPLETED          // Selesai, dana escrow dicairkan
+  CANCELLED          // Batal oleh sistem atau persetujuan bersama
+  DISPUTED           // Sedang dalam penanganan komplain
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum CategoryType {
+  EVENT_PLUS_ONE      // Teman pesta, nikahan, wisuda
+  CAFE_FOOD_HUNTER    // Teman ngopi / kulineran
+  SCENIC_PHOTO_BUD    // Wisata alam & pembantu foto estetik
+  HOBBY_SPORT_PAL     // Teman olahraga / main game
+  LOCAL_GUIDE         // Panduan wisata ramah & aman
+}
+
+model User {
+  id               String           @id @default(uuid())
+  phoneNumber      String           @unique
+  fullName         String
+  email            String?          @unique
+  gender           Gender
+  birthDate        DateTime
+  avatarUrl        String?
+  bio              String?
+  city             String           // Manado, Bitung, Tomohon, Tondano, Kotamobagu
+  hobbies          String[]         // e.g. ["Ngopi", "Badminton", "Fotografi"]
+  role             Role             @default(USER)
+  isCompanionActive Boolean         @default(false)
+  
+  // Keamanan & KYC
+  kycVerification  KYCVerification?
+  
+  // Saldo Dompet Rupiah & Escrow
+  wallet           Wallet?
+  
+  // Relasi Permintaan Hangout
+  hostedRequests   HangoutRequest[] @relation("HostRequests")
+  bidsSubmitted    BidOffer[]       @relation("CompanionBids")
+  
+  // Ulasan & Rating
+  reviewsGiven     Review[]         @relation("ReviewsGiven")
+  reviewsReceived  Review[]         @relation("ReviewsReceived")
+  
+  // Audit Keamanan
+  safetyIncidents  SafetyIncident[]
+  
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model KYCVerification {
+  id               String     @id @default(uuid())
+  userId           String     @unique
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nikKtp           String     @unique
+  ktpImagePath     String
+  selfieImagePath  String
+  livenessScore    Float      // Skor biometrik kedipan wajah
+  status           KYCStatus  @default(PENDING)
+  verifiedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime   @default(now())
+}
+
+model WhitelistedVenue {
+  id               String           @id @default(uuid())
+  name             String           // e.g. "Kawasan Megamas Manado", "Puncak Rurukan Tomohon"
+  category         String           // "Mall", "Cafe", "Restaurant", "Scenic Spot"
+  city             String           // Manado, Tomohon, dll.
+  address          String
+  latitude         Float
+  longitude        Float
+  isOfficialPartner Boolean         @default(false)
+  requests         HangoutRequest[]
+}
+
+model HangoutRequest {
+  id               String           @id @default(uuid())
+  hostId           String
+  host             User             @relation("HostRequests", fields: [hostId], references: [id])
+  
+  category         CategoryType
+  title            String           // e.g. "Teman ngopi & diskusi startup di Megamas"
+  description      String?
+  
+  // Lokasi Wajib Publik
+  venueId          String
+  venue            WhitelistedVenue @relation(fields: [venueId], references: [id])
+  customMeetNotes  String?          // e.g. "Ketemu di depan Coffee Bean"
+  
+  scheduledTime    DateTime
+  durationMinutes  Int              // e.g. 120 (2 jam)
+  
+  // Finansial (IDR - Rupiah)
+  initialBudgetRupiah Float          // Penawaran awal Host
+  finalPriceRupiah    Float?         // Harga deal setelah negosiasi
+  platformFeeRupiah   Float?         // Fee platform 15%
+  companionNetRupiah  Float?         // Diterima bersih oleh mitra
+  
+  status           RequestStatus    @default(OPEN_FOR_BIDS)
+  
+  // Realtime Bids Masuk
+  bids             BidOffer[]
+  selectedBidId    String?          @unique
+  selectedBid      BidOffer?        @relation("SelectedBid", fields: [selectedBidId], references: [id])
+  
+  // Handshake & Validasi Kehadiran
+  qrHandshakeCode  String           @unique @default(uuid())
+  handshakeDoneAt  DateTime?
+  sessionEndedAt   DateTime?
+  
+  reviews          Review[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model BidOffer {
+  id               String          @id @default(uuid())
+  requestId        String
+  request          HangoutRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  companionId      String
+  companion        User            @relation("CompanionBids", fields: [companionId], references: [id])
+  
+  bidPriceRupiah   Float           // Bisa sama dengan initialBudget atau counter-offer
+  coverNote        String?         // e.g. "Saya bawa kamera pro untuk foto konten"
+  estimatedArrivalMinutes Int?     // ETA tiba di lokasi
+  
+  status           BidStatus       @default(PENDING)
+  isBoosted        Boolean         @default(false) // Beli priority visibility
+  
+  selectedInRequest HangoutRequest? @relation("SelectedBid")
+  
+  createdAt        DateTime        @default(now())
+}
+
+model Wallet {
+  id               String          @id @default(uuid())
+  userId           String          @unique
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  availableRupiah  Float           @default(0) // Saldo aktif yang bisa ditarik
+  escrowLockedRupiah Float         @default(0) // Saldo yang dikunci saat ada request aktif
+  
+  transactions     Transaction[]
+  updatedAt        DateTime        @updatedAt
+}
+
+model Transaction {
+  id               String          @id @default(uuid())
+  walletId         String
+  wallet           Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  
+  amountRupiah     Float
+  type             String          // "TOPUP_QRIS", "ESCROW_LOCK", "ESCROW_RELEASE", "WITHDRAWAL", "PLATFORM_COMMISSION"
+  referenceOrderId String?
+  paymentGatewayRef String?        // Reference dari Midtrans/Xendit
+  status           String          // "PENDING", "SUCCESS", "FAILED"
+  createdAt        DateTime        @default(now())
+}
+
+model Review {
+  id               String          @id @default(uuid())
+  requestId        String
+  request          HangoutRequest  @relation(fields: [requestId], references: [id])
+  reviewerId       String
+  reviewer         User            @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  targetId         String
+  target           User            @relation("ReviewsReceived", fields: [targetId], references: [id])
+  
+  rating           Int             // 1 sampai 5
+  tags             String[]        // ["Good Listener", "Punctual", "Fun Vibe", "Polite"]
+  comment          String?
+  
+  createdAt        DateTime        @default(now())
+}
+
+model SafetyIncident {
+  id               String          @id @default(uuid())
+  reporterId       String
+  reporter         User            @relation(fields: [reporterId], references: [id])
+  requestId        String?
+  reason           String
+  chatLogSnapshot  String?
+  status           String          @default("INVESTIGATING") // RESOLVED, BLOCKED
+  createdAt        DateTime        @default(now())
+}
